@@ -61,9 +61,9 @@ export const sourceEvidenceSchema = z.object({
   sentiment: z.enum(["positive", "mixed", "negative"]),
   summary: z.string(),
   trustLabel: z.string(),
-  domain: z.string().optional(),
-  evidenceCount: z.number().int().nonnegative().optional(),
-  snippet: z.string().optional(),
+  domain: z.string().nullable().optional(),
+  evidenceCount: z.number().int().nonnegative().nullable().optional(),
+  snippet: z.string().nullable().optional(),
 });
 
 export const pricePointSchema = z.object({
@@ -75,7 +75,7 @@ export const marketplacePriceSchema = z.object({
   marketplaceSlug: marketplaceSlugSchema,
   marketplaceLabel: z.string(),
   productName: z.string(),
-  productUrl: z.string().url().optional(),
+  productUrl: z.string().url().nullable().optional(),
   currency: z.string(),
   currentPrice: z.number().nullable(),
   availability: z.enum(["available", "unavailable"]),
