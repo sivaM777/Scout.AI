@@ -15,7 +15,7 @@ type AnalysisRouteDeps = {
 export async function registerAnalysisRoutes(app: FastifyInstance, deps: AnalysisRouteDeps): Promise<void> {
   app.post("/v1/analysis", async (request, reply) => {
     const payload = analyzeLinkRequestSchema.parse(request.body);
-    const cacheKey = buildAnalysisCacheKey(payload.url);
+    const cacheKey = buildAnalysisCacheKey(payload);
     const cachedReport = await deps.cacheStore.get<AnalysisReport>(cacheKey);
 
     if (cachedReport) {

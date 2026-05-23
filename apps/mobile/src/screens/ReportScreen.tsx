@@ -1,5 +1,5 @@
 import React from "react";
-import { Linking, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ActionButton } from "../components/ActionButton";
 import { PriceHistoryMiniChart } from "../components/PriceHistoryMiniChart";
@@ -10,8 +10,41 @@ import { createWatchlistItem } from "../services/api";
 import { useAppState } from "../state/AppState";
 import { theme } from "../theme";
 
+function formatPrice(value: number | null, currency: string) {
+  if (value === null) {
+    return "Unavailable";
+  }
+
+  const prefix = currency === "USD" ? "$" : "Rs ";
+  return `${prefix}${value.toFixed(0)}`;
+}
+
+function formatDelta(value: number | null, percent: number | null, showPercent: boolean) {
+  if (value === null) {
+    return "No live price found";
+  }
+
+  if (showPercent && percent !== null) {
+    const sign = percent > 0 ? "+" : "";
+    return `${sign}${percent.toFixed(2)}% vs current`;
+  }
+
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(0)} vs current`;
+}
+
+function priceSourceLabel(source: "live" | "historical" | "estimated") {
+  if (source === "live") {
+    return "Live listing price";
+  }
+  if (source === "historical") {
+    return "Last recorded live price";
+  }
+  return "Estimated fallback price";
+}
+
 export function ReportScreen() {
-  const { currentReport, addWatchlistItem } = useAppState();
+  const { currentReport, addWatchlistItem, settings } = useAppState();
 
   if (!currentReport) {
     return (
@@ -23,6 +56,9 @@ export function ReportScreen() {
       </SafeAreaView>
     );
   }
+
+  const reviewSources = currentReport.sources.filter((source) => source.sourceType === "reddit" || source.sourceType === "youtube");
+  const supportingSources = currentReport.sources.filter((source) => source.sourceType !== "reddit" && source.sourceType !== "youtube");
 
   const verdictTone =
     currentReport.verdict === "buy"
@@ -72,7 +108,66 @@ export function ReportScreen() {
           <Text style={styles.bodyText}>{currentReport.verdictReason}</Text>
         </SectionCard>
 
-        <SectionCard title="Price intelligence" subtitle={`Current ${currentReport.pricing.currency} ${currentReport.pricing.currentPrice.toFixed(0)}`}>
+        <SectionCard
+          title="Live marketplace prices"
+          subtitle={`${currentReport.pricing.marketplacePrices.length} stores checked from your selected list`}
+        >
+          {currentReport.pricing.marketplacePrices.length === 0 ? (
+            <Text style={styles.bodyText}>Marketplace comparison is disabled for this run or no stores were selected.</Text>
+          ) : (
+          <View style={styles.comparisonStack}>
+            {currentReport.pricing.marketplacePrices.map((entry) => {
+              const content = (
+                <>
+                  <View style={styles.comparisonCopy}>
+                    <Text style={styles.comparisonTitle}>{entry.marketplaceLabel}</Text>
+                    <Text style={styles.comparisonBody}>{entry.productName}</Text>
+                    <Text style={styles.comparisonMeta}>{entry.note ?? (entry.isOriginalListing ? "Current listing" : "Live matched listing")}</Text>
+                  </View>
+                  <View style={styles.comparisonValueBlock}>
+                    <Text style={styles.comparisonPrice}>{formatPrice(entry.currentPrice, entry.currency)}</Text>
+                    <Text
+                      style={[
+                        styles.comparisonDelta,
+                        entry.priceStatus === "cheaper"
+                          ? styles.cheaperText
+                          : entry.priceStatus === "higher"
+                            ? styles.higherText
+                            : styles.neutralText,
+                      ]}
+                    >
+                      {entry.isOriginalListing
+                        ? "Current listing"
+                        : formatDelta(entry.differenceAmount, entry.differencePercent, settings.showPriceDeltaPercent)}
+                    </Text>
+                  </View>
+                </>
+              );
+
+              const productUrl = entry.productUrl;
+
+              if (productUrl) {
+                return (
+                  <Pressable key={`${entry.marketplaceSlug}-${entry.productName}`} onPress={() => void Linking.openURL(productUrl)} style={styles.comparisonRow}>
+                    {content}
+                  </Pressable>
+                );
+              }
+
+              return (
+                <View key={`${entry.marketplaceSlug}-${entry.productName}`} style={styles.comparisonRow}>
+                  {content}
+                </View>
+              );
+            })}
+          </View>
+          )}
+        </SectionCard>
+
+        <SectionCard
+          title="Price intelligence"
+          subtitle={`${priceSourceLabel(currentReport.pricing.priceSource)}: ${formatPrice(currentReport.pricing.currentPrice, currentReport.pricing.currency)}`}
+        >
           <View style={styles.priceGrid}>
             <View style={styles.metricPill}>
               <Text style={styles.metricLabel}>Average</Text>
@@ -93,7 +188,7 @@ export function ReportScreen() {
         <SectionCard title="What works well">
           {currentReport.pros.map((pro) => (
             <Text key={pro} style={styles.listItem}>
-              • {pro}
+              - {pro}
             </Text>
           ))}
         </SectionCard>
@@ -101,13 +196,21 @@ export function ReportScreen() {
         <SectionCard title="Watch-outs">
           {currentReport.cons.map((con) => (
             <Text key={con} style={styles.listItem}>
-              • {con}
+              - {con}
             </Text>
           ))}
         </SectionCard>
 
         <SectionCard title="Community pulse" subtitle="Plain-language signal">
           <Text style={styles.bodyText}>{currentReport.communityPulse}</Text>
+        </SectionCard>
+
+        <SectionCard title="Live review evidence" subtitle="Reddit and YouTube signals used in the verdict">
+          {reviewSources.length > 0 ? (
+            <SourceList sources={reviewSources} />
+          ) : (
+            <Text style={styles.bodyText}>No live Reddit or YouTube review evidence was available for this run.</Text>
+          )}
         </SectionCard>
 
         <SectionCard title="Alternative picks" subtitle="Extra feature for safer decisions">
@@ -124,8 +227,12 @@ export function ReportScreen() {
           ))}
         </SectionCard>
 
-        <SectionCard title="Source transparency" subtitle="Tap any card to inspect the source search result">
-          <SourceList sources={currentReport.sources} />
+        <SectionCard title="Source transparency" subtitle="Editorial, comparison, and listing context">
+          {supportingSources.length > 0 ? (
+            <SourceList sources={supportingSources} />
+          ) : (
+            <Text style={styles.bodyText}>No extra editorial or listing sources were attached to this report.</Text>
+          )}
         </SectionCard>
       </ScrollView>
     </SafeAreaView>
@@ -211,6 +318,56 @@ const styles = StyleSheet.create({
   bodyText: {
     color: theme.colors.text,
     lineHeight: 22,
+  },
+  comparisonStack: {
+    gap: theme.spacing.sm,
+  },
+  comparisonRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.md,
+    justifyContent: "space-between",
+    backgroundColor: theme.colors.surfaceMuted,
+    borderRadius: theme.radii.md,
+    padding: theme.spacing.md,
+  },
+  comparisonCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  comparisonTitle: {
+    color: theme.colors.text,
+    fontWeight: "800",
+  },
+  comparisonBody: {
+    color: theme.colors.text,
+    lineHeight: 20,
+  },
+  comparisonMeta: {
+    color: theme.colors.textMuted,
+    fontSize: theme.typography.caption,
+  },
+  comparisonValueBlock: {
+    alignItems: "flex-end",
+    gap: 4,
+  },
+  comparisonPrice: {
+    color: theme.colors.text,
+    fontWeight: "800",
+    fontSize: theme.typography.subtitle,
+  },
+  comparisonDelta: {
+    fontSize: theme.typography.caption,
+    fontWeight: "700",
+  },
+  cheaperText: {
+    color: theme.colors.success,
+  },
+  higherText: {
+    color: theme.colors.danger,
+  },
+  neutralText: {
+    color: theme.colors.textMuted,
   },
   priceGrid: {
     flexDirection: "row",

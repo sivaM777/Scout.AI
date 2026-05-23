@@ -5,12 +5,12 @@ import json
 import re
 from dataclasses import dataclass
 from typing import Any, Iterable
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 import httpx
 
 from app.config import settings
-from app.models.schemas import ProductIdentity, SourceEvidence
+from app.models.schemas import ProductIdentity, ResearchPreferences, SourceEvidence
 
 try:
     from youtube_transcript_api import YouTubeTranscriptApi
@@ -302,69 +302,95 @@ async def _search_youtube_reviews(client: httpx.AsyncClient, query: str, limit: 
     return reviews
 
 
-def _reddit_source(posts: list[RedditPost], product: ProductIdentity, fallback_query: str) -> SourceEvidence:
+def _reddit_sources(posts: list[RedditPost], product: ProductIdentity, fallback_query: str) -> list[SourceEvidence]:
     if not posts:
-        return SourceEvidence(
-            id="reddit-owner-signal",
-            sourceType="reddit",
-            title=f"{product.name} Reddit owner discussions",
-            url=_query_url("https://www.reddit.com/search/?q={query}", fallback_query),
-            sentiment="mixed",
-            summary=(
-                f"Live Reddit posts were unavailable, so this falls back to a direct owner-discussion search for {product.name}."
-            ),
-            trustLabel="Owner signal",
+        return [
+            SourceEvidence(
+                id="reddit-owner-signal",
+                sourceType="reddit",
+                title=f"{product.name} Reddit owner discussions",
+                url=_query_url("https://www.reddit.com/search/?q={query}", fallback_query),
+                sentiment="mixed",
+                summary=(
+                    f"Live Reddit posts were unavailable, so this falls back to a direct owner-discussion search for {product.name}."
+                ),
+                trustLabel="Owner signal",
+                domain="reddit.com",
+            )
+        ]
+
+    items: list[SourceEvidence] = []
+    for index, post in enumerate(posts[:2], start=1):
+        combined_text = _clean_phrase(f"{post.title} {post.body}")
+        items.append(
+            SourceEvidence(
+                id=f"reddit-owner-signal-{index}",
+                sourceType="reddit",
+                title=post.title,
+                url=post.url,
+                sentiment=_infer_sentiment(combined_text),
+                summary=(
+                    f"Reddit owners surfaced {post.comment_count} comments and a score of {post.score}. "
+                    f"Live thread summary: {_clip_text(combined_text, max_words=30)}"
+                ),
+                trustLabel="Owner signal",
+                domain="reddit.com",
+                evidenceCount=post.comment_count,
+                snippet=_clip_text(post.body or post.title, max_words=22),
+            )
         )
 
-    top_titles = "; ".join(post.title for post in posts[:2])
-    body_snippets = " ".join(post.body for post in posts if post.body)
-    summary_text = _clip_text(_clean_phrase(f"{top_titles} {body_snippets}"), max_words=34)
-    sentiment = _infer_sentiment(f"{top_titles} {body_snippets}")
-
-    return SourceEvidence(
-        id="reddit-owner-signal",
-        sourceType="reddit",
-        title=posts[0].title,
-        url=posts[0].url,
-        sentiment=sentiment,
-        summary=(
-            f"Top Reddit threads for {product.name} mention {summary_text}"
-        ),
-        trustLabel="Owner signal",
-    )
+    return items
 
 
-def _youtube_source(reviews: list[YouTubeReview], product: ProductIdentity, fallback_query: str) -> SourceEvidence:
+def _youtube_sources(reviews: list[YouTubeReview], product: ProductIdentity, fallback_query: str) -> list[SourceEvidence]:
     if not reviews:
-        return SourceEvidence(
-            id="youtube-review-signal",
-            sourceType="youtube",
-            title=f"{product.name} YouTube review roundup",
-            url=_query_url("https://www.youtube.com/results?search_query={query}", fallback_query),
-            sentiment="mixed",
-            summary=(
-                f"Live transcript extraction was unavailable, so this falls back to a direct YouTube review search for {product.name}."
-            ),
-            trustLabel="Video signal",
+        return [
+            SourceEvidence(
+                id="youtube-review-signal",
+                sourceType="youtube",
+                title=f"{product.name} YouTube review roundup",
+                url=_query_url("https://www.youtube.com/results?search_query={query}", fallback_query),
+                sentiment="mixed",
+                summary=(
+                    f"Live transcript extraction was unavailable, so this falls back to a direct YouTube review search for {product.name}."
+                ),
+                trustLabel="Video signal",
+                domain="youtube.com",
+            )
+        ]
+
+    items: list[SourceEvidence] = []
+    for index, review in enumerate(reviews[:2], start=1):
+        transcript_summary = _clip_text(review.transcript, max_words=38)
+        items.append(
+            SourceEvidence(
+                id=f"youtube-review-signal-{index}",
+                sourceType="youtube",
+                title=review.title,
+                url=review.url,
+                sentiment=_infer_sentiment(review.transcript, fallback="positive"),
+                summary=(
+                    f"Transcript-backed YouTube review picked up: {transcript_summary}"
+                ),
+                trustLabel="Video signal",
+                domain="youtube.com",
+                evidenceCount=max(len(review.transcript.split()) // 40, 1),
+                snippet=_clip_text(review.transcript, max_words=20),
+            )
         )
 
-    transcript_summary = _clip_text(reviews[0].transcript, max_words=38)
-    sentiment = _infer_sentiment(" ".join(review.transcript for review in reviews), fallback="positive")
-
-    return SourceEvidence(
-        id="youtube-review-signal",
-        sourceType="youtube",
-        title=reviews[0].title,
-        url=reviews[0].url,
-        sentiment=sentiment,
-        summary=(
-            f"Transcript-backed YouTube coverage for {product.name} highlights {transcript_summary}"
-        ),
-        trustLabel="Video signal",
-    )
+    return items
 
 
-async def gather_review_signals(product: ProductIdentity, product_url: str | None = None) -> list[SourceEvidence]:
+async def gather_review_signals(
+    product: ProductIdentity,
+    product_url: str | None = None,
+    preferences: ResearchPreferences | None = None,
+) -> list[SourceEvidence]:
+    include_reddit = preferences.include_reddit if preferences else True
+    include_youtube = preferences.include_youtube if preferences else True
+    include_editorial = preferences.include_editorial if preferences else True
     lens = CATEGORY_LENSES.get(product.category, CATEGORY_LENSES["general"])
     phrase = _base_search_phrase(product)
     owner_query = f"{phrase} review owner experience"
@@ -375,51 +401,78 @@ async def gather_review_signals(product: ProductIdentity, product_url: str | Non
 
     timeout = httpx.Timeout(settings.review_fetch_timeout_seconds)
 
+    reddit_posts: list[RedditPost] = []
+    youtube_reviews: list[YouTubeReview] = []
+
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers=REVIEW_HEADERS) as client:
-        reddit_task = _fetch_reddit_posts(client, owner_query, settings.reddit_search_limit)
-        youtube_task = _search_youtube_reviews(client, youtube_query, settings.youtube_search_limit)
-        reddit_result, youtube_result = await asyncio.gather(reddit_task, youtube_task, return_exceptions=True)
+        tasks = []
+        if include_reddit:
+            tasks.append(_fetch_reddit_posts(client, owner_query, settings.reddit_search_limit))
+        if include_youtube:
+            tasks.append(_search_youtube_reviews(client, youtube_query, settings.youtube_search_limit))
 
-    reddit_posts = reddit_result if isinstance(reddit_result, list) else []
-    youtube_reviews = youtube_result if isinstance(youtube_result, list) else []
+        results = await asyncio.gather(*tasks, return_exceptions=True) if tasks else []
 
-    sources = [
-        _reddit_source(reddit_posts, product, owner_query),
-        _youtube_source(youtube_reviews, product, youtube_query),
-        SourceEvidence(
-            id="editorial-review-signal",
-            sourceType="editorial",
-            title=f"{product.name} {lens['editorial_title']}",
-            url=_query_url("https://www.google.com/search?q={query}", editorial_query),
-            sentiment="mixed",
-            summary=(
-                f"Editorial coverage helps validate structured pros and cons for {product.name}, with more disciplined testing than raw marketplace comments."
-            ),
-            trustLabel="Editorial signal",
-        ),
-        SourceEvidence(
-            id="community-issues-signal",
-            sourceType="community",
-            title=f"{product.name} {lens['community_title']}",
-            url=_query_url("https://www.google.com/search?q={query}", issue_query),
-            sentiment="mixed",
-            summary=(
-                f"This query stays focused on the risk checks for {product.name}, especially around {lens['pain_points']}."
-            ),
-            trustLabel="Risk check",
-        ),
-        SourceEvidence(
-            id="comparison-signal",
-            sourceType="blog",
-            title=f"{product.name} alternative comparisons",
-            url=_query_url("https://www.google.com/search?q={query}", comparison_query),
-            sentiment="mixed",
-            summary=(
-                f"Comparison coverage helps position {product.name} against close substitutes, which is especially useful when the live price feels borderline."
-            ),
-            trustLabel="Comparison signal",
-        ),
-    ]
+    result_index = 0
+    if include_reddit:
+        reddit_result = results[result_index] if result_index < len(results) else []
+        reddit_posts = reddit_result if isinstance(reddit_result, list) else []
+        result_index += 1
+    if include_youtube:
+        youtube_result = results[result_index] if result_index < len(results) else []
+        youtube_reviews = youtube_result if isinstance(youtube_result, list) else []
+        result_index += 1
+
+    sources: list[SourceEvidence] = []
+    if include_reddit:
+        sources.extend(_reddit_sources(reddit_posts, product, owner_query))
+    if include_youtube:
+        sources.extend(_youtube_sources(youtube_reviews, product, youtube_query))
+
+    if include_editorial:
+        sources.extend(
+            [
+                SourceEvidence(
+                    id="editorial-review-signal",
+                    sourceType="editorial",
+                    title=f"{product.name} {lens['editorial_title']}",
+                    url=_query_url("https://www.google.com/search?q={query}", editorial_query),
+                    sentiment="mixed",
+                    summary=(
+                        f"Editorial coverage helps validate structured pros and cons for {product.name}, with more disciplined testing than raw marketplace comments."
+                    ),
+                    trustLabel="Editorial signal",
+                    domain="google.com",
+                    snippet=f"Query focus: {lens['editorial_title']}",
+                ),
+                SourceEvidence(
+                    id="community-issues-signal",
+                    sourceType="community",
+                    title=f"{product.name} {lens['community_title']}",
+                    url=_query_url("https://www.google.com/search?q={query}", issue_query),
+                    sentiment="mixed",
+                    summary=(
+                        f"This query stays focused on the risk checks for {product.name}, especially around {lens['pain_points']}."
+                    ),
+                    trustLabel="Risk check",
+                    domain="google.com",
+                    snippet=_clip_text(lens["pain_points"], max_words=10),
+                ),
+                SourceEvidence(
+                    id="comparison-signal",
+                    sourceType="blog",
+                    title=f"{product.name} alternative comparisons",
+                    url=_query_url("https://www.google.com/search?q={query}", comparison_query),
+                    sentiment="mixed",
+                    summary=(
+                        f"Comparison coverage helps position {product.name} against close substitutes, which is especially useful when the live price feels borderline."
+                    ),
+                    trustLabel="Comparison signal",
+                    domain="google.com",
+                    snippet="Alternative and value-comparison search",
+                ),
+            ]
+        )
 
     if product_url:
         sources.append(
@@ -433,6 +486,7 @@ async def gather_review_signals(product: ProductIdentity, product_url: str | Non
                     f"Keep the original {product.marketplace} listing in the loop to cross-check seller, size or variant details, and any buyer Q&A that could change the final decision."
                 ),
                 trustLabel="Listing signal",
+                domain=(urlparse(product_url).hostname or "").replace("www.", ""),
             )
         )
 

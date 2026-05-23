@@ -9,7 +9,7 @@ from typing import Any
 
 from bs4 import BeautifulSoup
 
-from app.models.schemas import PricePoint, PricingInsight, ProductIdentity
+from app.models.schemas import MarketplacePrice, PricePoint, PricingInsight, ProductIdentity
 from app.services.price_store import PriceSnapshotStore, get_price_snapshot_store
 
 
@@ -256,15 +256,28 @@ def build_pricing_insight(
     html: str | None = None,
     snapshot_store: PriceSnapshotStore | None = None,
     observed_at: datetime | None = None,
+    deal_preference: str = "balanced",
+    marketplace_prices: list[MarketplacePrice] | None = None,
 ) -> PricingInsight:
     seed = _seed_from_text(f"{url}|{product.marketplace}|{product.name}|{product.brand}")
     fallback_currency = _default_currency(product)
     extracted = _extract_price_from_html(html, fallback_currency)
-    current_price = extracted.amount or _fallback_current_price(seed, product.category, product.marketplace)
     currency = _normalize_currency(extracted.currency, fallback_currency)
 
     store = snapshot_store or get_price_snapshot_store()
-    store.record_snapshot(product, url, current_price, currency, observed_at=observed_at or datetime.now(UTC))
+    existing_history = store.load_history_points(product, limit=5)
+
+    if extracted.amount is not None:
+        current_price = extracted.amount
+        price_source = "live"
+        store.record_snapshot(product, url, current_price, currency, observed_at=observed_at or datetime.now(UTC))
+    elif existing_history:
+        current_price = existing_history[-1].value
+        price_source = "historical"
+    else:
+        current_price = _fallback_current_price(seed, product.category, product.marketplace)
+        price_source = "estimated"
+
     history = store.load_history_points(product, limit=5)
 
     if len(history) >= 2:
@@ -272,15 +285,21 @@ def build_pricing_insight(
         average_price = round(sum(observed_prices) / len(observed_prices), 2)
         lowest_price = round(min(observed_prices), 2)
         target_price = round((average_price * 0.4) + (lowest_price * 0.6), 2)
-        is_good_deal = current_price <= round(target_price * 1.01, 2)
     else:
         volatility = CATEGORY_VOLATILITY.get(product.category, CATEGORY_VOLATILITY["general"])
         drift = ((seed % 11) - 5) / 100
         average_price = round(current_price * (1.11 + volatility + max(drift, 0)), 2)
         lowest_price = round(max(current_price * (0.84 - (volatility / 3) + min(drift, 0)), current_price * 0.66), 2)
         target_price = round((average_price * 0.38) + (lowest_price * 0.62), 2)
-        is_good_deal = current_price <= round(target_price * 1.02, 2)
-        history = _history_points(current_price, seed, volatility)
+        history = existing_history if existing_history else _history_points(current_price, seed, volatility)
+
+    preference_multipliers = {
+        "aggressive": 1.05,
+        "balanced": 1.0,
+        "conservative": 0.95,
+    }
+    target_price = round(target_price * preference_multipliers.get(deal_preference, 1.0), 2)
+    is_good_deal = current_price <= round(target_price * 1.01, 2)
 
     return PricingInsight(
         currentPrice=round(current_price, 2),
@@ -289,5 +308,7 @@ def build_pricing_insight(
         recommendedTargetPrice=target_price,
         currency=currency,
         isGoodDeal=is_good_deal,
+        priceSource=price_source,
         history=history,
+        marketplacePrices=marketplace_prices or [],
     )

@@ -28,8 +28,11 @@ export function SourceList({ sources }: SourceListProps) {
             </View>
           </View>
           <Text style={styles.summary}>{source.summary}</Text>
+          {source.snippet ? <Text style={styles.snippet}>"{source.snippet}"</Text> : null}
           <Text style={styles.meta}>
-            {source.trustLabel} • {source.sourceType}
+            {[source.trustLabel, source.sourceType, source.domain, source.evidenceCount ? `${source.evidenceCount} signals` : null]
+              .filter(Boolean)
+              .join(" - ")}
           </Text>
         </Pressable>
       ))}
@@ -60,6 +63,11 @@ const styles = StyleSheet.create({
   summary: {
     color: theme.colors.textMuted,
     lineHeight: 20,
+  },
+  snippet: {
+    color: theme.colors.text,
+    lineHeight: 20,
+    fontStyle: "italic",
   },
   meta: {
     color: theme.colors.textMuted,

@@ -41,3 +41,10 @@ def resolve_marketplace(url: str) -> MarketplaceAdapter:
             return adapter
 
     return GENERIC_MARKETPLACE
+
+
+def resolve_marketplace_slug(slug: str) -> MarketplaceAdapter | None:
+    for adapter in SUPPORTED_MARKETPLACES:
+        if adapter.slug == slug:
+            return adapter
+    return None

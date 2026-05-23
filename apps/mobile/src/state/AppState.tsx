@@ -1,10 +1,11 @@
 import React, { createContext, useCallback, useContext, useMemo, useReducer } from "react";
-import type { AnalysisReport, WatchlistItem } from "@scout/shared";
+import { defaultResearchSettings, type AnalysisReport, type ResearchSettings, type WatchlistItem } from "@scout/shared";
 
 type AppState = {
   currentReport: AnalysisReport | null;
   history: AnalysisReport[];
   watchlist: WatchlistItem[];
+  settings: ResearchSettings;
 };
 
 type AppContextValue = AppState & {
@@ -12,18 +13,21 @@ type AppContextValue = AppState & {
   hydrateHistory: (reports: AnalysisReport[]) => void;
   hydrateWatchlist: (items: WatchlistItem[]) => void;
   addWatchlistItem: (item: WatchlistItem) => void;
+  updateSettings: (settings: ResearchSettings) => void;
 };
 
 type Action =
   | { type: "SET_CURRENT_REPORT"; payload: AnalysisReport }
   | { type: "HYDRATE_HISTORY"; payload: AnalysisReport[] }
   | { type: "HYDRATE_WATCHLIST"; payload: WatchlistItem[] }
-  | { type: "ADD_WATCHLIST_ITEM"; payload: WatchlistItem };
+  | { type: "ADD_WATCHLIST_ITEM"; payload: WatchlistItem }
+  | { type: "UPDATE_SETTINGS"; payload: ResearchSettings };
 
 const initialState: AppState = {
   currentReport: null,
   history: [],
   watchlist: [],
+  settings: defaultResearchSettings,
 };
 
 function upsertHistory(history: AnalysisReport[], report: AnalysisReport) {
@@ -53,6 +57,11 @@ function reducer(state: AppState, action: Action): AppState {
         ...state,
         watchlist: [action.payload, ...state.watchlist.filter((item) => item.id !== action.payload.id)],
       };
+    case "UPDATE_SETTINGS":
+      return {
+        ...state,
+        settings: action.payload,
+      };
     default:
       return state;
   }
@@ -78,6 +87,10 @@ export function AppStateProvider({ children }: React.PropsWithChildren) {
     dispatch({ type: "ADD_WATCHLIST_ITEM", payload: item });
   }, []);
 
+  const updateSettings = useCallback((settings: ResearchSettings) => {
+    dispatch({ type: "UPDATE_SETTINGS", payload: settings });
+  }, []);
+
   const value = useMemo<AppContextValue>(
     () => ({
       ...state,
@@ -85,8 +98,9 @@ export function AppStateProvider({ children }: React.PropsWithChildren) {
       hydrateHistory,
       hydrateWatchlist,
       addWatchlistItem,
+      updateSettings,
     }),
-    [addWatchlistItem, hydrateHistory, hydrateWatchlist, setCurrentReport, state],
+    [addWatchlistItem, hydrateHistory, hydrateWatchlist, setCurrentReport, state, updateSettings],
   );
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;

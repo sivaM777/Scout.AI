@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { supportedMarketplaceOptions } from "@scout/shared";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ProductUrlInput } from "../components/ProductUrlInput";
 import { QuickActionCard } from "../components/QuickActionCard";
@@ -11,11 +12,9 @@ import { fetchHistory, fetchWatchlist } from "../services/api";
 import { useAppState } from "../state/AppState";
 import { theme } from "../theme";
 
-const supportedLabels = ["Amazon", "Flipkart", "Ajio", "Myntra", "Nykaa", "Croma", "Reliance Digital", "and more"];
-
 export function HomeScreen() {
   const navigation = useNavigation<any>();
-  const { history, hydrateHistory, hydrateWatchlist, setCurrentReport } = useAppState();
+  const { history, hydrateHistory, hydrateWatchlist, setCurrentReport, settings, updateSettings } = useAppState();
   const [url, setUrl] = useState("");
 
   const startAnalysis = useCallback(
@@ -57,6 +56,8 @@ export function HomeScreen() {
     };
   }, [hydrateHistory, hydrateWatchlist]);
 
+  const selectedStores = supportedMarketplaceOptions.filter((option) => settings.selectedMarketplaces.includes(option.slug));
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -69,13 +70,27 @@ export function HomeScreen() {
           </Text>
         </View>
 
-        <ProductUrlInput value={url} onChangeText={setUrl} onSubmit={() => startAnalysis(url)} />
+        <ProductUrlInput
+          value={url}
+          onChangeText={setUrl}
+          onSubmit={() => startAnalysis(url)}
+          selectedMarketplaces={settings.selectedMarketplaces}
+          onChangeMarketplaces={(selectedMarketplaces) =>
+            updateSettings({
+              ...settings,
+              selectedMarketplaces,
+            })
+          }
+        />
 
-        <SectionCard title="Supported shopping sites" subtitle="Built as a multi-marketplace assistant, not a single-store tool.">
+        <SectionCard
+          title="Selected comparison stores"
+          subtitle={`${selectedStores.length} marketplaces are enabled for live cross-store research`}
+        >
           <View style={styles.marketplaceRow}>
-            {supportedLabels.map((label) => (
-              <View key={label} style={styles.marketplaceChip}>
-                <Text style={styles.marketplaceChipText}>{label}</Text>
+            {selectedStores.map((option) => (
+              <View key={option.slug} style={styles.marketplaceChip}>
+                <Text style={styles.marketplaceChipText}>{option.label}</Text>
               </View>
             ))}
           </View>
@@ -108,7 +123,7 @@ export function HomeScreen() {
                 <View style={styles.historyCopy}>
                   <Text style={styles.historyTitle}>{report.productName}</Text>
                   <Text style={styles.historyMeta}>
-                    {report.marketplace} • {report.verdict.toUpperCase()} • Score {report.overallScore}
+                    {report.marketplace} - {report.verdict.toUpperCase()} - Score {report.overallScore}
                   </Text>
                 </View>
                 <ActionButton

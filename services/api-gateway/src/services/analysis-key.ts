@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { AnalyzeLinkRequest } from "@scout/shared";
 
 export function normalizeProductUrl(rawUrl: string): string {
   const url = new URL(rawUrl);
@@ -16,7 +17,21 @@ export function normalizeProductUrl(rawUrl: string): string {
   return url.toString();
 }
 
-export function buildAnalysisCacheKey(rawUrl: string): string {
-  const normalizedUrl = normalizeProductUrl(rawUrl);
-  return `analysis:${createHash("sha1").update(normalizedUrl).digest("hex")}`;
+function normalizePreferences(payload: AnalyzeLinkRequest): string {
+  if (!payload.preferences) {
+    return "default";
+  }
+
+  const normalized = {
+    ...payload.preferences,
+    selectedMarketplaces: [...payload.preferences.selectedMarketplaces].sort(),
+  };
+
+  return JSON.stringify(normalized);
+}
+
+export function buildAnalysisCacheKey(payload: AnalyzeLinkRequest): string {
+  const normalizedUrl = normalizeProductUrl(payload.url);
+  const cacheBasis = `${normalizedUrl}|${normalizePreferences(payload)}`;
+  return `analysis:${createHash("sha1").update(cacheBasis).digest("hex")}`;
 }
