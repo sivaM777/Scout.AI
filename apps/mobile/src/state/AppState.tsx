@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useMemo, useReducer } from "react";
+import React, { createContext, useCallback, useContext, useMemo, useReducer } from "react";
 import type { AnalysisReport, WatchlistItem } from "@scout/shared";
 
 type AppState = {
@@ -62,16 +62,31 @@ const AppStateContext = createContext<AppContextValue | undefined>(undefined);
 
 export function AppStateProvider({ children }: React.PropsWithChildren) {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const setCurrentReport = useCallback((report: AnalysisReport) => {
+    dispatch({ type: "SET_CURRENT_REPORT", payload: report });
+  }, []);
+
+  const hydrateHistory = useCallback((reports: AnalysisReport[]) => {
+    dispatch({ type: "HYDRATE_HISTORY", payload: reports });
+  }, []);
+
+  const hydrateWatchlist = useCallback((items: WatchlistItem[]) => {
+    dispatch({ type: "HYDRATE_WATCHLIST", payload: items });
+  }, []);
+
+  const addWatchlistItem = useCallback((item: WatchlistItem) => {
+    dispatch({ type: "ADD_WATCHLIST_ITEM", payload: item });
+  }, []);
 
   const value = useMemo<AppContextValue>(
     () => ({
       ...state,
-      setCurrentReport: (report) => dispatch({ type: "SET_CURRENT_REPORT", payload: report }),
-      hydrateHistory: (reports) => dispatch({ type: "HYDRATE_HISTORY", payload: reports }),
-      hydrateWatchlist: (items) => dispatch({ type: "HYDRATE_WATCHLIST", payload: items }),
-      addWatchlistItem: (item) => dispatch({ type: "ADD_WATCHLIST_ITEM", payload: item }),
+      setCurrentReport,
+      hydrateHistory,
+      hydrateWatchlist,
+      addWatchlistItem,
     }),
-    [state],
+    [addWatchlistItem, hydrateHistory, hydrateWatchlist, setCurrentReport, state],
   );
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;

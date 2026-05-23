@@ -6,12 +6,11 @@ type ShareIntentModuleShape = {
   clearInitialSharedText?: () => void;
 };
 
-const shareIntentModule = NativeModules.ShareIntent as ShareIntentModuleShape | undefined;
-const eventEmitter = shareIntentModule ? new NativeEventEmitter(NativeModules.ShareIntent) : null;
-
 export function useShareIntent(onShare: (url: string) => void) {
   useEffect(() => {
     let isMounted = true;
+    const shareIntentModule = NativeModules.ShareIntent as ShareIntentModuleShape | undefined;
+    let subscription: { remove: () => void } | undefined;
 
     const handleShare = (sharedText: string | null | undefined) => {
       if (!isMounted || !sharedText) {
@@ -21,14 +20,23 @@ export function useShareIntent(onShare: (url: string) => void) {
       onShare(sharedText);
     };
 
-    void shareIntentModule?.getInitialSharedText?.().then((sharedText) => {
-      handleShare(sharedText);
-      shareIntentModule?.clearInitialSharedText?.();
-    });
+    void shareIntentModule?.getInitialSharedText?.()
+      .then((sharedText) => {
+        handleShare(sharedText);
+        shareIntentModule?.clearInitialSharedText?.();
+      })
+      .catch((error) => {
+        console.warn("ShareIntent initial read failed", error);
+      });
 
-    const subscription = eventEmitter?.addListener("ShareIntentReceived", (sharedText: string) => {
-      handleShare(sharedText);
-    });
+    try {
+      const eventEmitter = shareIntentModule ? new NativeEventEmitter(NativeModules.ShareIntent) : null;
+      subscription = eventEmitter?.addListener("ShareIntentReceived", (sharedText: string) => {
+        handleShare(sharedText);
+      });
+    } catch (error) {
+      console.warn("ShareIntent event subscription failed", error);
+    }
 
     return () => {
       isMounted = false;

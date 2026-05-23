@@ -34,9 +34,28 @@ export function HomeScreen() {
   useShareIntent(startAnalysis);
 
   useEffect(() => {
-    void fetchHistory().then(hydrateHistory);
-    void fetchWatchlist().then(hydrateWatchlist);
-  }, []);
+    let isMounted = true;
+
+    const hydrate = async () => {
+      try {
+        const [historyItems, watchlistItems] = await Promise.all([fetchHistory(), fetchWatchlist()]);
+        if (!isMounted) {
+          return;
+        }
+
+        hydrateHistory(historyItems);
+        hydrateWatchlist(watchlistItems);
+      } catch (error) {
+        console.warn("HomeScreen hydration failed", error);
+      }
+    };
+
+    void hydrate();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [hydrateHistory, hydrateWatchlist]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
