@@ -21,6 +21,8 @@ The intelligence service is designed around a marketplace adapter registry. This
 - Source transparency cards so users can inspect why a verdict was generated
 - AI-powered alternative suggestions for safer buying decisions
 - Recent research history to make the app feel sticky and useful beyond a one-time lookup
+- Live Reddit owner-discussion search and YouTube transcript-backed review signals
+- SQLite-backed price snapshot storage inside the AI service for accumulating real price history over time
 
 ## Local setup
 
@@ -49,6 +51,7 @@ Tradeoffs of the free profile:
 - Free Render web services spin down after 15 minutes of inactivity, so the first request after idle time can be slow.
 - Cache, history, and watchlist data stay in memory only, so they reset after redeploys or restarts.
 - Groq can stay free only while your usage remains within the current Groq free-tier limits.
+- The new AI-service SQLite price history is durable locally, but on free Render it still sits on ephemeral disk and can reset after instance replacement or redeploy.
 - The Android app itself is not "hosted"; publish the APK/AAB through Google Play internal testing or closed testing.
 
 ## GitHub-ready setup
