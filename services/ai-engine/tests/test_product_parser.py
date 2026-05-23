@@ -287,6 +287,14 @@ class ProductParserTests(unittest.TestCase):
         self.assertIn("iPhone 15", reliance.name)
         self.assertEqual("https://images.example.com/reliance-iphone15.jpg", str(reliance.image))
 
+        reliance_search_hit = parse_product_identity(
+            "https://www.reliancedigital.in/product/apple-iphone-15-128gb-black-lmiqm4-7533780",
+            html=RELIANCE_DETAIL_HTML,
+        )
+        self.assertEqual("Reliance Digital", reliance_search_hit.marketplace)
+        self.assertEqual("Apple", reliance_search_hit.brand)
+        self.assertIn("128GB Black", reliance_search_hit.name)
+
 
 if __name__ == "__main__":
     unittest.main()

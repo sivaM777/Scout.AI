@@ -673,9 +673,12 @@ def _extract_croma(ctx: ExtractionContext) -> ExtractionHints:
 
 
 def _extract_reliance_digital(ctx: ExtractionContext) -> ExtractionHints:
-    slug = _segment_before(ctx.path_segments, {"p"})
-    if not slug and len(ctx.path_segments) >= 2:
-        slug = ctx.path_segments[-2]
+    slug = _segment_before(ctx.path_segments, {"p", "product"})
+    if not slug and ctx.path_segments:
+        if ctx.path_segments[0].lower() == "product" and len(ctx.path_segments) >= 2:
+            slug = ctx.path_segments[-1]
+        elif len(ctx.path_segments) >= 2:
+            slug = ctx.path_segments[-2]
     return ExtractionHints(name=_polish_name(slug))
 
 

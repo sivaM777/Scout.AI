@@ -62,6 +62,8 @@ SITE_PRICE_SELECTORS: dict[str, tuple[tuple[str, str | None], ...]] = {
         ("div[class*='price']", "data-price"),
     ),
     "reliance digital": (
+        ("div.add-to-card-container__product-price", None),
+        ("span.product-marked-price", None),
         ("div[class*='price'] span", None),
         ("span[class*='TextWeb__Text']", None),
         ("[data-testid='price']", None),

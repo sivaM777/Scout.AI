@@ -139,8 +139,10 @@ def _is_probable_product_url(adapter: MarketplaceAdapter, url: str) -> bool:
 
     if adapter.slug == "amazon":
         return "/dp/" in path or "/gp/product/" in path
-    if adapter.slug in {"flipkart", "ajio", "nykaa", "croma", "reliance-digital", "jiomart"}:
+    if adapter.slug in {"flipkart", "ajio", "nykaa", "croma", "jiomart"}:
         return "/p/" in path
+    if adapter.slug == "reliance-digital":
+        return "/p/" in path or "/product/" in path
     if adapter.slug == "myntra":
         return path.endswith("/buy") or bool(re.search(r"/\d{6,}/buy$", path))
     if adapter.slug == "tatacliq":

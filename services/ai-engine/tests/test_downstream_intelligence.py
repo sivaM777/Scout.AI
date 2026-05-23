@@ -59,6 +59,16 @@ FLIPKART_PRICE_HTML = """
 """
 
 
+RELIANCE_PRICE_HTML = """
+<html>
+  <body>
+    <div class="add-to-card-container__product-price">₹58,990.00</div>
+    <span class="product-marked-price">₹59,900.00</span>
+  </body>
+</html>
+"""
+
+
 class DownstreamIntelligenceTests(unittest.TestCase):
     def test_pricing_uses_live_html_price_and_persists_history(self) -> None:
         product = ProductIdentity(
@@ -122,6 +132,18 @@ class DownstreamIntelligenceTests(unittest.TestCase):
                 ),
                 FLIPKART_PRICE_HTML,
                 52499.0,
+            ),
+            (
+                "https://www.reliancedigital.in/product/apple-iphone-15-128gb-black-lmiqm4-7533780",
+                ProductIdentity(
+                    marketplace="Reliance Digital",
+                    name="Apple iPhone 15 128GB Black",
+                    brand="Apple",
+                    category="electronics",
+                    image="https://images.example.com/iphone15.jpg",
+                ),
+                RELIANCE_PRICE_HTML,
+                58990.0,
             ),
         ]
 
