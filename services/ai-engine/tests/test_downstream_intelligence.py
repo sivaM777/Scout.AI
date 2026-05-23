@@ -6,6 +6,14 @@ from tempfile import TemporaryDirectory
 from unittest.mock import AsyncMock, patch
 
 from app.models.schemas import ProductIdentity
+from app.services.adapters.registry import resolve_marketplace_slug
+from app.services.marketplace_comparison import (
+    NativeSearchResult,
+    _native_result_product,
+    _parse_ajio_search_results,
+    _parse_nykaa_search_results,
+    _passes_match_guardrails,
+)
 from app.services.price_intelligence import build_pricing_insight
 from app.services.price_store import PriceSnapshotStore
 from app.services.review_sources import RedditPost, YouTubeReview, gather_review_signals
@@ -64,6 +72,46 @@ RELIANCE_PRICE_HTML = """
   <body>
     <div class="add-to-card-container__product-price">₹58,990.00</div>
     <span class="product-marked-price">₹59,900.00</span>
+  </body>
+</html>
+"""
+
+
+NYKAA_SEARCH_HTML = """
+<html>
+  <body>
+    <div class="productWrapper css-ifdzs8">
+      <a class="css-qlopj4" href="/maybelline-new-york-fit-me-matte-poreless-foundation/p/183373">
+        <img alt="Maybelline New York Fit Me Matte + Poreless Foundation" src="https://images.example.com/foundation.jpg" />
+        <h2 class="css-xrzmfa">Fit Me Matte + Poreless Foundation</h2>
+      </a>
+      <div class="css-d5z3ro">
+        <span class="css-111z9ua">Rs. 549</span>
+      </div>
+    </div>
+  </body>
+</html>
+"""
+
+AJIO_SEARCH_HTML = """
+<html>
+  <body>
+    <script>
+      window.__STATE__ = {
+        "grid": {
+          "results": ["469258173001"],
+          "entities": {
+            "469258173001": {
+              "name": "Nike Air Max Alpha Trainer 5 Shoes",
+              "url": "/nike-air-max-alpha-trainer-5-shoes/p/469258173_black",
+              "price": {"value": 5247},
+              "offerPrice": {"value": 4722},
+              "fnlColorVariantData": {"brandName": "Nike"}
+            }
+          }
+        }
+      };
+    </script>
   </body>
 </html>
 """
@@ -152,6 +200,50 @@ class DownstreamIntelligenceTests(unittest.TestCase):
                 pricing = build_pricing_insight(url, product, html=html)
                 self.assertEqual("live", pricing.price_source)
                 self.assertEqual(expected_price, pricing.current_price)
+
+    def test_native_search_parsers_extract_priority_store_results(self) -> None:
+        nykaa_results = _parse_nykaa_search_results(NYKAA_SEARCH_HTML)
+        ajio_results = _parse_ajio_search_results(AJIO_SEARCH_HTML)
+
+        self.assertEqual(1, len(nykaa_results))
+        self.assertEqual(
+            "Maybelline New York Fit Me Matte + Poreless Foundation",
+            nykaa_results[0].name,
+        )
+        self.assertEqual(549.0, nykaa_results[0].price)
+        self.assertEqual(
+            "https://www.nykaa.com/maybelline-new-york-fit-me-matte-poreless-foundation/p/183373",
+            nykaa_results[0].url,
+        )
+
+        self.assertEqual(1, len(ajio_results))
+        self.assertEqual("Nike", ajio_results[0].brand)
+        self.assertEqual(4722.0, ajio_results[0].price)
+        self.assertEqual(
+            "https://www.ajio.com/nike-air-max-alpha-trainer-5-shoes/p/469258173_black",
+            ajio_results[0].url,
+        )
+
+    def test_native_search_guardrails_reject_accessory_false_positive(self) -> None:
+        adapter = resolve_marketplace_slug("amazon")
+        self.assertIsNotNone(adapter)
+
+        target = ProductIdentity(
+            marketplace="Amazon",
+            name="Apple iPhone 15 128GB Black",
+            brand="Apple",
+            category="electronics",
+            image="https://images.example.com/iphone15.jpg",
+        )
+        accessory = NativeSearchResult(
+            name="Apple iPhone 15 Silicone Case with MagSafe",
+            url="https://www.amazon.in/Apple-iPhone-15-Silicone-Case/dp/B0TEST1234",
+            price=3999.0,
+            currency="INR",
+        )
+
+        candidate = _native_result_product(adapter, accessory)
+        self.assertFalse(_passes_match_guardrails(target, candidate))
 
     @patch("app.services.review_sources._search_youtube_reviews", new_callable=AsyncMock)
     @patch("app.services.review_sources._fetch_reddit_posts", new_callable=AsyncMock)
