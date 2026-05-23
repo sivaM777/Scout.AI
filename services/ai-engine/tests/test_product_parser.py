@@ -170,6 +170,30 @@ MYNTRA_MAINTENANCE_HTML = """
   <body></body>
 </html>
 """
+AMAZON_DETAIL_HTML = """
+<html>
+  <head>
+    <title>Apple iPhone 15 (128 GB) - Black : Amazon.in</title>
+  </head>
+  <body>
+    <span id="productTitle">Apple iPhone 15 (128 GB) - Black</span>
+    <a id="bylineInfo">Visit the Apple Store</a>
+    <img id="landingImage" src="https://images.example.com/iphone15.jpg" />
+  </body>
+</html>
+"""
+
+RELIANCE_DETAIL_HTML = """
+<html>
+  <head>
+    <title>Apple iPhone 15 128 GB Black | Reliance Digital</title>
+  </head>
+  <body>
+    <h1 class="pdp__title">Apple iPhone 15 128 GB Black</h1>
+    <img class="pdp__image" src="https://images.example.com/reliance-iphone15.jpg" />
+  </body>
+</html>
+"""
 
 
 class ProductParserTests(unittest.TestCase):
@@ -243,6 +267,25 @@ class ProductParserTests(unittest.TestCase):
         self.assertEqual(product.category, "fashion")
         self.assertIn("Fashion", product.name)
         self.assertIn("Piece", product.name)
+
+    def test_site_specific_html_selectors_enrich_priority_marketplaces(self) -> None:
+        amazon = parse_product_identity(
+            "https://www.amazon.in/Apple-iPhone-15-128-GB-Black/dp/B0CHX1W1XY",
+            html=AMAZON_DETAIL_HTML,
+        )
+        reliance = parse_product_identity(
+            "https://www.reliancedigital.in/apple-iphone-15-128-gb-black/p/493839489",
+            html=RELIANCE_DETAIL_HTML,
+        )
+
+        self.assertEqual("Apple", amazon.brand)
+        self.assertEqual("Apple iPhone 15 128GB Black", amazon.name)
+        self.assertEqual("https://images.example.com/iphone15.jpg", str(amazon.image))
+
+        self.assertEqual("Reliance Digital", reliance.marketplace)
+        self.assertEqual("Apple", reliance.brand)
+        self.assertIn("iPhone 15", reliance.name)
+        self.assertEqual("https://images.example.com/reliance-iphone15.jpg", str(reliance.image))
 
 
 if __name__ == "__main__":

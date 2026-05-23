@@ -183,6 +183,53 @@ GENERIC_METADATA_PHRASES = (
     "online shopping",
     "shop online",
 )
+SITE_METADATA_SELECTORS: dict[str, dict[str, tuple[tuple[str, str | None], ...]]] = {
+    "amazon": {
+        "name": (("#productTitle", None), ("#title span", None), ("h1.a-size-large", None)),
+        "brand": (("#bylineInfo", None), ("a#bylineInfo", None)),
+        "image": (("#landingImage", "src"), ("#landingImage", "data-old-hires"), ("#imgTagWrapperId img", "src")),
+    },
+    "flipkart": {
+        "name": (("span.VU-ZEz", None), ("div._6EBuvT h1 span", None), ("h1 span", None)),
+        "image": (("img._53J4C-", "src"), ("img._396cs4", "src"), ("img[loading='eager']", "src")),
+    },
+    "ajio": {
+        "name": (("h1.prod-name", None), ("div.prod-name", None)),
+        "brand": (("h2.brand-name", None), ("div.brand-name", None), ("div.prod-brand", None)),
+        "image": (("img.prod-image", "src"), ("div.image-view img", "src")),
+    },
+    "myntra": {
+        "name": (("h1.pdp-name", None), ("h1.pdp-title", None), ("div.pdp-name", None)),
+        "brand": (("h1.pdp-title", None), ("div.pdp-title", None)),
+        "image": (("img.image-grid-image", "src"), ("div.image-grid-imageContainer img", "src")),
+    },
+    "nykaa": {
+        "name": (("h1", None),),
+        "brand": (("span", "data-brand"),),
+        "image": (("img.css-1gc4x7i", "src"), ("img[fetchpriority='high']", "src")),
+    },
+    "tatacliq": {
+        "name": (("h1.ProductDescription__title", None), ("h1.PdpDescriptionDetails__title", None), ("h1", None)),
+        "brand": (("h1 + h2", None), ("div.ProductDescription__brandName", None)),
+        "image": (("img[alt][src]", "src"),),
+    },
+    "croma": {
+        "name": (("h1.product-title", None), ("h1.pdp-title", None), ("h1", None)),
+        "image": (("img.zoom-image", "src"), ("img.product-image", "src"), ("img[fetchpriority='high']", "src")),
+    },
+    "reliance-digital": {
+        "name": (("h1.pdp__title", None), ("h1.product__title", None), ("h1", None)),
+        "image": (("img.pdp__image", "src"), ("img[fetchpriority='high']", "src"), ("img", "src")),
+    },
+    "vijay-sales": {
+        "name": (("h1.product-title", None), ("h1", None)),
+        "image": (("img.MagicZoom", "src"), ("img[fetchpriority='high']", "src")),
+    },
+    "best-buy": {
+        "name": (("h1.heading-5", None), (".heading-5.v-fw-regular", None), ("h1", None)),
+        "image": (("img.primary-image", "src"), ("img[fetchpriority='high']", "src")),
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -330,6 +377,10 @@ def _sanitize_brand(value: str | None) -> str | None:
     if not value:
         return None
 
+    value = re.sub(r"(?i)^visit the\s+", "", value)
+    value = re.sub(r"(?i)\s+store$", "", value)
+    value = re.sub(r"(?i)^brand\s*[:\-]\s*", "", value)
+    value = re.sub(r"(?i)^by\s+", "", value)
     cleaned = _polish_name(value)
     if not cleaned:
         return None
@@ -446,6 +497,36 @@ def _parse_html_metadata(url: str, marketplace: MarketplaceAdapter, html: str | 
 
     soup = BeautifulSoup(html, "html.parser")
 
+    def site_selector_value(selectors: tuple[tuple[str, str | None], ...] | None) -> str | None:
+        if not selectors:
+            return None
+
+        for selector, attribute in selectors:
+            for node in soup.select(selector):
+                if attribute:
+                    candidate = node.get(attribute)
+                    if candidate and candidate.strip():
+                        return candidate.strip()
+                    continue
+
+                candidates = [
+                    node.get("content"),
+                    node.get("aria-label"),
+                    node.get("title"),
+                    node.get("alt"),
+                    node.get_text(" ", strip=True),
+                ]
+                for candidate in candidates:
+                    if candidate and candidate.strip():
+                        return candidate.strip()
+        return None
+
+    site_selectors = SITE_METADATA_SELECTORS.get(marketplace.slug, {})
+    site_name = site_selector_value(site_selectors.get("name"))
+    site_brand = site_selector_value(site_selectors.get("brand"))
+    site_image = site_selector_value(site_selectors.get("image"))
+    site_category = site_selector_value(site_selectors.get("category"))
+
     json_ld_name: str | None = None
     json_ld_brand: str | None = None
     json_ld_image: str | None = None
@@ -481,7 +562,8 @@ def _parse_html_metadata(url: str, marketplace: MarketplaceAdapter, html: str | 
 
     return PageMetadata(
         name=_strip_site_suffix(
-            json_ld_name
+            site_name
+            or json_ld_name
             or meta_content(("property", "og:title"), ("name", "twitter:title"), ("name", "title"))
             or title_value
             or "",
@@ -489,16 +571,19 @@ def _parse_html_metadata(url: str, marketplace: MarketplaceAdapter, html: str | 
         )
         or None,
         brand=_sanitize_brand(
-            json_ld_brand
+            site_brand
+            or json_ld_brand
             or meta_content(("property", "product:brand"), ("name", "brand"), ("itemprop", "brand"))
         ),
         image=_normalize_image(
             url,
-            json_ld_image
+            site_image
+            or json_ld_image
             or meta_content(("property", "og:image"), ("name", "twitter:image"), ("itemprop", "image")),
         ),
         category=_polish_name(
-            json_ld_category
+            site_category
+            or json_ld_category
             or meta_content(("property", "product:category"), ("name", "category"), ("itemprop", "category"))
         ),
     )

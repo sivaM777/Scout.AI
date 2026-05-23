@@ -37,6 +37,28 @@ def _price_html(amount: int, currency: str = "INR") -> str:
 """
 
 
+AMAZON_PRICE_HTML = """
+<html>
+  <body>
+    <div id="corePriceDisplay_desktop_feature_div">
+      <span class="a-price">
+        <span class="a-offscreen">₹69,999.00</span>
+      </span>
+    </div>
+  </body>
+</html>
+"""
+
+
+FLIPKART_PRICE_HTML = """
+<html>
+  <body>
+    <div class="Nx9bqj">₹52,499</div>
+  </body>
+</html>
+"""
+
+
 class DownstreamIntelligenceTests(unittest.TestCase):
     def test_pricing_uses_live_html_price_and_persists_history(self) -> None:
         product = ProductIdentity(
@@ -74,6 +96,40 @@ class DownstreamIntelligenceTests(unittest.TestCase):
         self.assertEqual(49999.0, second.history[-1].value)
         self.assertEqual(51499.0, second.average_price)
         self.assertEqual(49999.0, second.lowest_price)
+
+    def test_marketplace_specific_price_selectors_extract_live_prices(self) -> None:
+        cases = [
+            (
+                "https://www.amazon.in/Apple-iPhone-15-128-GB-Black/dp/B0CHX1W1XY",
+                ProductIdentity(
+                    marketplace="Amazon",
+                    name="Apple iPhone 15 128GB Black",
+                    brand="Apple",
+                    category="electronics",
+                    image="https://images.example.com/iphone15.jpg",
+                ),
+                AMAZON_PRICE_HTML,
+                69999.0,
+            ),
+            (
+                "https://www.flipkart.com/samsung-galaxy-s23-5g-cream-128-gb/p/itm1234567890?pid=MOBGQ9M92MZP7K7S",
+                ProductIdentity(
+                    marketplace="Flipkart",
+                    name="Samsung Galaxy S23 5G Cream 128GB",
+                    brand="Samsung",
+                    category="electronics",
+                    image="https://images.example.com/galaxy-s23.jpg",
+                ),
+                FLIPKART_PRICE_HTML,
+                52499.0,
+            ),
+        ]
+
+        for url, product, html, expected_price in cases:
+            with self.subTest(url=url):
+                pricing = build_pricing_insight(url, product, html=html)
+                self.assertEqual("live", pricing.price_source)
+                self.assertEqual(expected_price, pricing.current_price)
 
     @patch("app.services.review_sources._search_youtube_reviews", new_callable=AsyncMock)
     @patch("app.services.review_sources._fetch_reddit_posts", new_callable=AsyncMock)

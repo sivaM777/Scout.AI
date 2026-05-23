@@ -24,6 +24,77 @@ HTML_CURRENCY_META_KEYS = (
     "og:price:currency",
     "pricecurrency",
 )
+SITE_PRICE_SELECTORS: dict[str, tuple[tuple[str, str | None], ...]] = {
+    "amazon": (
+        ("#corePriceDisplay_desktop_feature_div .a-price .a-offscreen", None),
+        ("#corePrice_feature_div .a-price .a-offscreen", None),
+        (".apexPriceToPay .a-offscreen", None),
+        ("#priceblock_ourprice", None),
+        ("#priceblock_dealprice", None),
+        ("#price_inside_buybox", None),
+    ),
+    "flipkart": (
+        ("div.Nx9bqj", None),
+        ("div._30jeq3", None),
+        ("[data-testid='price-final']", None),
+    ),
+    "ajio": (
+        ("span.price", None),
+        ("div.prod-sp", None),
+        ("div.price", None),
+    ),
+    "myntra": (
+        ("span.pdp-price strong", None),
+        ("div.pdp-price-info span", None),
+    ),
+    "nykaa": (
+        ("span[data-testid='price-final']", None),
+        ("div[class*='price'] span", None),
+    ),
+    "tata cliq": (
+        ("div[class*='Price']", None),
+        ("h3[class*='price']", None),
+    ),
+    "croma": (
+        ("span.amount", None),
+        ("div.amount", None),
+        ("span[class*='amount']", None),
+        ("div[class*='price']", "data-price"),
+    ),
+    "reliance digital": (
+        ("div[class*='price'] span", None),
+        ("span[class*='TextWeb__Text']", None),
+        ("[data-testid='price']", None),
+    ),
+    "vijay sales": (
+        ("span[class*='price']", None),
+        ("div[class*='price']", None),
+    ),
+    "snapdeal": (
+        ("span.payBlkBig", None),
+        ("span.pdp-final-price", None),
+    ),
+    "jiomart": (
+        ("span.jm-heading-xxs", None),
+        ("div[class*='price'] span", None),
+    ),
+    "firstcry": (
+        ("span[class*='price']", None),
+        ("div[class*='price']", None),
+    ),
+    "hm": (
+        ("span[data-price]", "data-price"),
+        ("span[class*='Price']", None),
+    ),
+    "zara": (
+        ("span.money-amount__main", None),
+        ("span[data-qa-qualifier='price-amount-current']", None),
+    ),
+    "best buy": (
+        ("div.priceView-customer-price span", None),
+        ("span[aria-hidden='true']", None),
+    ),
+}
 CATEGORY_BASELINES = {
     "beauty": [349.0, 699.0, 1099.0, 1699.0],
     "electronics": [3999.0, 8999.0, 17999.0, 39999.0],
@@ -211,13 +282,52 @@ def _extract_selector_price(soup: BeautifulSoup, fallback_currency: str) -> Extr
     return ExtractedPrice(currency=fallback_currency)
 
 
-def _extract_price_from_html(html: str | None, fallback_currency: str) -> ExtractedPrice:
+def _extract_marketplace_selector_price(soup: BeautifulSoup, marketplace: str, fallback_currency: str) -> ExtractedPrice:
+    selectors = SITE_PRICE_SELECTORS.get(marketplace.lower())
+    if not selectors:
+        return ExtractedPrice(currency=fallback_currency)
+
+    for selector, attribute in selectors:
+        for node in soup.select(selector):
+            candidates = []
+            if attribute:
+                candidates.append(node.get(attribute))
+            candidates.extend(
+                [
+                    node.get("content"),
+                    node.get("data-price"),
+                    node.get("aria-label"),
+                    node.get_text(" ", strip=True),
+                ]
+            )
+
+            for candidate in candidates:
+                if not candidate or len(candidate) > 120:
+                    continue
+
+                parsed = _parse_price_text(candidate, fallback_currency)
+                if parsed.amount is not None:
+                    return parsed
+
+    return ExtractedPrice(currency=fallback_currency)
+
+
+def _extract_price_from_html(html: str | None, fallback_currency: str, marketplace: str) -> ExtractedPrice:
     if not html:
         return ExtractedPrice(currency=fallback_currency)
 
     soup = BeautifulSoup(html, "html.parser")
 
-    for extractor in (_extract_json_ld_price, _extract_meta_price, _extract_selector_price):
+    for extractor in (
+        lambda current_soup, current_currency: _extract_marketplace_selector_price(
+            current_soup,
+            marketplace,
+            current_currency,
+        ),
+        _extract_json_ld_price,
+        _extract_meta_price,
+        _extract_selector_price,
+    ):
         extracted = extractor(soup, fallback_currency)
         if extracted.amount is not None:
             return extracted
@@ -261,7 +371,7 @@ def build_pricing_insight(
 ) -> PricingInsight:
     seed = _seed_from_text(f"{url}|{product.marketplace}|{product.name}|{product.brand}")
     fallback_currency = _default_currency(product)
-    extracted = _extract_price_from_html(html, fallback_currency)
+    extracted = _extract_price_from_html(html, fallback_currency, product.marketplace)
     currency = _normalize_currency(extracted.currency, fallback_currency)
 
     store = snapshot_store or get_price_snapshot_store()

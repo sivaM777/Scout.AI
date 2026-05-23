@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Iterable
-from urllib.parse import parse_qs, quote_plus, unquote, urlparse
+import re
+from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -32,6 +32,10 @@ NAME_STOPWORDS = {
     "sale",
     "with",
 }
+GENERIC_CANDIDATE_NAMES = {
+    "online store",
+    "product research",
+}
 
 
 @dataclass(frozen=True)
@@ -48,6 +52,29 @@ def _search_phrase(product: ProductIdentity) -> str:
     if not phrase.lower().startswith(product.brand.lower()):
         phrase = f"{product.brand} {phrase}"
     return " ".join(token for token in phrase.split() if token)
+
+
+def _search_queries(adapter: MarketplaceAdapter, product: ProductIdentity) -> list[str]:
+    primary_domain = adapter.domains[0]
+    phrase = _search_phrase(product)
+    queries = [
+        f'site:{primary_domain} "{phrase}"',
+        f'site:{primary_domain} "{product.brand}" "{product.name}"',
+        f"site:{primary_domain} {phrase}",
+    ]
+
+    if product.category != "general":
+        queries.append(f'site:{primary_domain} "{phrase}" {product.category}')
+
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for query in queries:
+        normalized = " ".join(query.split())
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        ordered.append(normalized)
+    return ordered
 
 
 def _tokenize_name(value: str) -> set[str]:
@@ -93,9 +120,52 @@ def _unwrap_duckduckgo_href(raw_href: str) -> str | None:
     return None
 
 
+def _normalize_marketplace_url(adapter: MarketplaceAdapter, url: str) -> str:
+    parsed = urlparse(url)
+    path = parsed.path
+
+    if adapter.slug == "amazon":
+        match = re.search(r"/(?:dp|gp/product)/([A-Z0-9]{10})", path, re.IGNORECASE)
+        if match:
+            path = f"/dp/{match.group(1).upper()}"
+            return f"{parsed.scheme}://{parsed.netloc}{path}"
+
+    normalized = parsed._replace(fragment="", query="")
+    return normalized.geturl()
+
+
+def _is_probable_product_url(adapter: MarketplaceAdapter, url: str) -> bool:
+    path = (urlparse(url).path or "").lower()
+
+    if adapter.slug == "amazon":
+        return "/dp/" in path or "/gp/product/" in path
+    if adapter.slug in {"flipkart", "ajio", "nykaa", "croma", "reliance-digital", "jiomart"}:
+        return "/p/" in path
+    if adapter.slug == "myntra":
+        return path.endswith("/buy") or bool(re.search(r"/\d{6,}/buy$", path))
+    if adapter.slug == "tatacliq":
+        return "/p-" in path or path.endswith(".html")
+    if adapter.slug == "meesho":
+        return "/p/" in path
+    if adapter.slug == "vijay-sales":
+        return bool(re.search(r"/\d{5,}$", path))
+    if adapter.slug == "snapdeal":
+        return "/product/" in path
+    if adapter.slug == "firstcry":
+        return path.endswith("/product-detail")
+    if adapter.slug == "hm":
+        return "productpage." in path
+    if adapter.slug == "zara":
+        return bool(re.search(r"-p[0-9a-z]+(?:\.html)?$", path))
+    if adapter.slug == "best-buy":
+        return "/site/" in path and ".p" in path
+    return True
+
+
 def _extract_marketplace_urls(html: str, adapter: MarketplaceAdapter) -> list[str]:
     soup = BeautifulSoup(html, "html.parser")
-    urls: list[str] = []
+    probable_urls: list[str] = []
+    fallback_urls: list[str] = []
     seen: set[str] = set()
 
     for link in soup.find_all("a", href=True):
@@ -107,16 +177,20 @@ def _extract_marketplace_urls(html: str, adapter: MarketplaceAdapter) -> list[st
         if not any(hostname.endswith(domain) for domain in adapter.domains):
             continue
 
-        normalized = resolved.split("#", maxsplit=1)[0]
+        normalized = _normalize_marketplace_url(adapter, resolved)
         if normalized in seen:
             continue
 
         seen.add(normalized)
-        urls.append(normalized)
-        if len(urls) >= 4:
+        if _is_probable_product_url(adapter, normalized):
+            probable_urls.append(normalized)
+        else:
+            fallback_urls.append(normalized)
+
+        if len(probable_urls) >= 4:
             break
 
-    return urls
+    return probable_urls + fallback_urls[: max(0, 4 - len(probable_urls))]
 
 
 async def _search_marketplace_urls(
@@ -124,18 +198,28 @@ async def _search_marketplace_urls(
     adapter: MarketplaceAdapter,
     product: ProductIdentity,
 ) -> list[str]:
-    primary_domain = adapter.domains[0]
-    query = f'site:{primary_domain} "{_search_phrase(product)}"'
-    response = await client.get(
-        "https://html.duckduckgo.com/html/",
-        params={"q": query, "kl": "in-en"},
-        headers=SEARCH_HEADERS,
-    )
+    urls: list[str] = []
+    seen: set[str] = set()
 
-    if not response.is_success:
-        return []
+    for query in _search_queries(adapter, product):
+        response = await client.get(
+            "https://html.duckduckgo.com/html/",
+            params={"q": query, "kl": "in-en"},
+            headers=SEARCH_HEADERS,
+        )
 
-    return _extract_marketplace_urls(response.text, adapter)
+        if not response.is_success:
+            continue
+
+        for url in _extract_marketplace_urls(response.text, adapter):
+            if url in seen:
+                continue
+            seen.add(url)
+            urls.append(url)
+            if len(urls) >= 6:
+                return urls
+
+    return urls
 
 
 async def _fetch_marketplace_html(client: httpx.AsyncClient, url: str) -> str | None:
@@ -164,6 +248,20 @@ def _price_status(current_price: float | None, original_price: float, is_origina
     if abs(delta) <= max(original_price * 0.005, 1):
         return "same"
     return "cheaper" if delta < 0 else "higher"
+
+
+def _looks_generic_candidate(adapter: MarketplaceAdapter, product: ProductIdentity) -> bool:
+    normalized_name = product.name.strip().lower()
+    normalized_brand = product.brand.strip().lower()
+    adapter_name = adapter.label.strip().lower()
+
+    if not normalized_name or normalized_name in GENERIC_CANDIDATE_NAMES:
+        return True
+    if normalized_name == adapter_name:
+        return True
+    if normalized_brand in {"unknown", adapter_name} and normalized_name.startswith(adapter_name):
+        return True
+    return False
 
 
 def _unavailable_marketplace_price(
@@ -233,11 +331,17 @@ async def _best_marketplace_candidate(
     best_candidate: ComparisonCandidate | None = None
 
     for url in urls:
+        if not _is_probable_product_url(adapter, url):
+            continue
+
         html = await _fetch_marketplace_html(client, url)
         if not html:
             continue
 
         candidate_product = parse_product_identity(url, html=html)
+        if _looks_generic_candidate(adapter, candidate_product):
+            continue
+
         match_score = _name_similarity(target_product, candidate_product)
         if match_score < 0.38:
             continue
