@@ -131,6 +131,16 @@ HM_HTML = """
 </html>
 """
 
+FLIPKART_GENERIC_HTML = """
+<html>
+  <head>
+    <title>Online at Best Price in India | All Categories | Flipkart.com</title>
+    <meta property="og:title" content="Online at Best Price in India | All Categories" />
+  </head>
+  <body></body>
+</html>
+"""
+
 
 class ProductParserTests(unittest.TestCase):
     def test_marketplace_specific_url_extraction(self) -> None:
@@ -154,6 +164,18 @@ class ProductParserTests(unittest.TestCase):
         self.assertEqual(product.category, "fashion")
         self.assertEqual(product.name, "Rib Knit Top")
         self.assertEqual(str(product.image), "https://image.hm.com/product.jpg")
+
+    def test_generic_marketplace_metadata_does_not_override_url_identity(self) -> None:
+        product = parse_product_identity(
+            "https://www.flipkart.com/samsung-galaxy-s23-5g-cream-128-gb/p/itm1234567890?pid=MOBGQ9M92MZP7K7S",
+            html=FLIPKART_GENERIC_HTML,
+        )
+
+        self.assertEqual(product.marketplace, "Flipkart")
+        self.assertEqual(product.brand, "Samsung")
+        self.assertEqual(product.category, "electronics")
+        self.assertIn("Galaxy", product.name)
+        self.assertIn("S23", product.name)
 
 
 if __name__ == "__main__":

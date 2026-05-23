@@ -171,6 +171,15 @@ PRODUCT_PAGE_HEADERS = {
         "Chrome/125.0.0.0 Safari/537.36"
     ),
 }
+GENERIC_METADATA_PHRASES = (
+    "access denied",
+    "all categories",
+    "best price in india",
+    "catalog",
+    "home page",
+    "online shopping",
+    "shop online",
+)
 
 
 @dataclass(frozen=True)
@@ -208,6 +217,28 @@ class ExtractionContext:
 
 def _normalize_space(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
+
+
+def _looks_generic_metadata(value: str | None, marketplace: MarketplaceAdapter) -> bool:
+    if not value:
+        return True
+
+    normalized = _normalize_space(value).lower()
+    if not normalized:
+        return True
+
+    if normalized in {
+        marketplace.label.lower(),
+        "product",
+        "product research",
+        "unknown",
+    }:
+        return True
+
+    if normalized.startswith("online ") or normalized.startswith("buy online "):
+        return True
+
+    return any(phrase in normalized for phrase in GENERIC_METADATA_PHRASES)
 
 
 def _strip_site_suffix(value: str, marketplace: str) -> str:
@@ -676,7 +707,8 @@ def parse_product_identity(url: str, html: str | None = None) -> ProductIdentity
         f"{marketplace.label} Product {hints.product_id}" if hints.product_id else "Product Research"
     )
 
-    product_name = metadata.name or hints.name or fallback_name
+    preferred_metadata_name = metadata.name if not _looks_generic_metadata(metadata.name, marketplace) else None
+    product_name = preferred_metadata_name or hints.name or fallback_name
     product_name = _polish_name(product_name) or fallback_name
 
     brand = (
