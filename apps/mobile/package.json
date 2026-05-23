@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@react-navigation/bottom-tabs": "7.2.0",
-    "@react-navigation/native": "7.0.14",
+    "@react-navigation/native": "7.2.4",
     "@react-navigation/native-stack": "7.2.0",
     "@scout/shared": "file:../../packages/shared",
     "react": "18.3.1",
