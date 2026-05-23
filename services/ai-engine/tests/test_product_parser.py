@@ -141,6 +141,36 @@ FLIPKART_GENERIC_HTML = """
 </html>
 """
 
+AMAZON_GENERIC_HTML = """
+<html>
+  <head>
+    <title>Amazon.in</title>
+    <meta property="og:title" content="Amazon.in" />
+  </head>
+  <body></body>
+</html>
+"""
+
+CROMA_GENERIC_HTML = """
+<html>
+  <head>
+    <title>Croma Electronics | Online Electronics Shopping</title>
+    <meta property="og:title" content="Croma Electronics Online Electronics Shopping" />
+  </head>
+  <body></body>
+</html>
+"""
+
+MYNTRA_MAINTENANCE_HTML = """
+<html>
+  <head>
+    <title>Maintenance</title>
+    <meta property="og:title" content="Maintenance" />
+  </head>
+  <body></body>
+</html>
+"""
+
 
 class ProductParserTests(unittest.TestCase):
     def test_marketplace_specific_url_extraction(self) -> None:
@@ -166,16 +196,53 @@ class ProductParserTests(unittest.TestCase):
         self.assertEqual(str(product.image), "https://image.hm.com/product.jpg")
 
     def test_generic_marketplace_metadata_does_not_override_url_identity(self) -> None:
-        product = parse_product_identity(
-            "https://www.flipkart.com/samsung-galaxy-s23-5g-cream-128-gb/p/itm1234567890?pid=MOBGQ9M92MZP7K7S",
-            html=FLIPKART_GENERIC_HTML,
-        )
+        cases = [
+            {
+                "url": "https://www.flipkart.com/samsung-galaxy-s23-5g-cream-128-gb/p/itm1234567890?pid=MOBGQ9M92MZP7K7S",
+                "html": FLIPKART_GENERIC_HTML,
+                "marketplace": "Flipkart",
+                "brand": "Samsung",
+                "name_parts": ("Galaxy", "S23"),
+            },
+            {
+                "url": "https://www.amazon.in/Apple-iPhone-15-128-GB-Black/dp/B0CHX1W1XY",
+                "html": AMAZON_GENERIC_HTML,
+                "marketplace": "Amazon",
+                "brand": "Apple",
+                "name_parts": ("iPhone", "15"),
+            },
+            {
+                "url": "https://www.croma.com/apple-iphone-15-128gb-black/p/300123456",
+                "html": CROMA_GENERIC_HTML,
+                "marketplace": "Croma",
+                "brand": "Apple",
+                "name_parts": ("iPhone", "128GB"),
+            },
+            {
+                "url": "https://www.myntra.com/tshirts/hm/hm-men-regular-fit-cotton-t-shirt/30123456/buy",
+                "html": MYNTRA_MAINTENANCE_HTML,
+                "marketplace": "Myntra",
+                "brand": "H&M",
+                "name_parts": ("Cotton", "Shirt"),
+            },
+        ]
 
-        self.assertEqual(product.marketplace, "Flipkart")
-        self.assertEqual(product.brand, "Samsung")
-        self.assertEqual(product.category, "electronics")
-        self.assertIn("Galaxy", product.name)
-        self.assertIn("S23", product.name)
+        for case in cases:
+            with self.subTest(url=case["url"]):
+                product = parse_product_identity(case["url"], html=case["html"])
+                self.assertEqual(product.marketplace, case["marketplace"])
+                self.assertEqual(product.brand, case["brand"])
+                for part in case["name_parts"]:
+                    self.assertIn(part, product.name)
+
+    def test_hm_url_fallback_produces_specific_name(self) -> None:
+        product = parse_product_identity("https://www2.hm.com/en_in/productpage.1234567001.html")
+
+        self.assertEqual(product.marketplace, "H&M")
+        self.assertEqual(product.brand, "H&M")
+        self.assertEqual(product.category, "fashion")
+        self.assertIn("Fashion", product.name)
+        self.assertIn("Piece", product.name)
 
 
 if __name__ == "__main__":

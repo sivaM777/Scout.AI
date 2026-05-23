@@ -176,7 +176,10 @@ GENERIC_METADATA_PHRASES = (
     "all categories",
     "best price in india",
     "catalog",
+    "electronics online",
+    "electronics shopping",
     "home page",
+    "maintenance",
     "online shopping",
     "shop online",
 )
@@ -227,12 +230,19 @@ def _looks_generic_metadata(value: str | None, marketplace: MarketplaceAdapter) 
     if not normalized:
         return True
 
-    if normalized in {
+    marketplace_variants = {
         marketplace.label.lower(),
+        marketplace.label.lower().replace(" ", ""),
+        f"{marketplace.label.lower()}.in",
+        f"{marketplace.label.lower()}.com",
+        f"{marketplace.label.lower().replace(' ', '')}.in",
+        f"{marketplace.label.lower().replace(' ', '')}.com",
         "product",
         "product research",
         "unknown",
-    }:
+    }
+
+    if normalized in marketplace_variants:
         return True
 
     if normalized.startswith("online ") or normalized.startswith("buy online "):
@@ -611,7 +621,7 @@ def _extract_hm(ctx: ExtractionContext) -> ExtractionHints:
     product_id_match = re.search(r"productpage\.(\d+)", ctx.path, re.IGNORECASE)
     fallback_name = None
     if product_id_match:
-        fallback_name = f"H&M Product {product_id_match.group(1)}"
+        fallback_name = f"H&M Fashion Piece {product_id_match.group(1)}"
 
     return ExtractionHints(
         name=fallback_name,
