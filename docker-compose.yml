@@ -1,0 +1,46 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: scout_ai
+      POSTGRES_USER: scout
+      POSTGRES_PASSWORD: scout
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    environment:
+      PORT: 4000
+      AI_SERVICE_URL: http://ai-engine:8000
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGIN: "*"
+    depends_on:
+      - redis
+      - ai-engine
+    ports:
+      - "4000:4000"
+
+  ai-engine:
+    build:
+      context: .
+      dockerfile: services/ai-engine/Dockerfile
+    environment:
+      PORT: 8000
+      APP_ENV: development
+    ports:
+      - "8000:8000"
+
+volumes:
+  postgres-data:

@@ -1,0 +1,17 @@
+{
+  "name": "scout-ai-platform",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/mobile",
+    "packages/shared",
+    "services/api-gateway"
+  ],
+  "scripts": {
+    "bootstrap": "npm install --workspaces",
+    "dev:mobile": "npm run start --workspace @scout/mobile",
+    "dev:android": "npm run android --workspace @scout/mobile",
+    "dev:api": "npm run dev --workspace @scout/api-gateway",
+    "typecheck": "npm run typecheck --workspace @scout/shared && npm run typecheck --workspace @scout/api-gateway && npm run typecheck --workspace @scout/mobile"
+  }
+}

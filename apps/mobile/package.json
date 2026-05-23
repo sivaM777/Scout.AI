@@ -1,0 +1,33 @@
+{
+  "name": "@scout/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "react-native start",
+    "android": "react-native run-android",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@react-navigation/bottom-tabs": "7.2.0",
+    "@react-navigation/native": "7.0.14",
+    "@react-navigation/native-stack": "7.2.0",
+    "@scout/shared": "file:../../packages/shared",
+    "react": "18.3.1",
+    "react-native": "0.76.5",
+    "react-native-gesture-handler": "2.21.2",
+    "react-native-safe-area-context": "4.14.0",
+    "react-native-screens": "4.4.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@babel/preset-env": "^7.26.0",
+    "@babel/runtime": "^7.26.0",
+    "@react-native-community/cli": "15.0.1",
+    "@react-native-community/cli-platform-android": "15.0.1",
+    "@react-native/babel-preset": "0.76.5",
+    "@react-native/metro-config": "0.76.5",
+    "@types/react": "^18.3.12",
+    "typescript": "^5.7.3"
+  }
+}

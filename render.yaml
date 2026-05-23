@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: scout-ai-app
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./services/api-gateway/Dockerfile.render-free
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: HOST
+        value: "0.0.0.0"
+      - key: AI_PORT
+        value: "8000"
+      - key: AI_SERVICE_URL
+        value: "http://127.0.0.1:8000"
+      - key: APP_ENV
+        value: "production"
+      - key: LLM_BASE_URL
+        value: "https://api.groq.com/openai/v1"
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_MODEL
+        value: "llama-3.3-70b-versatile"
+      - key: REQUEST_TIMEOUT_SECONDS
+        value: "20"
+      - key: CORS_ORIGIN
+        value: "*"
+      - key: CACHE_TTL_SECONDS
+        value: "21600"

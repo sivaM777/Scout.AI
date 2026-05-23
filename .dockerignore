@@ -1,0 +1,14 @@
+.git
+.npm-cache
+node_modules
+**/node_modules
+services/ai-engine/.venv
+**/__pycache__
+**/*.pyc
+apps/mobile/android/.gradle
+apps/mobile/android/build
+apps/mobile/android/app/build
+*.apk
+.env
+**/.env
+**/.env.local
