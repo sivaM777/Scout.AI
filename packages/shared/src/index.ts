@@ -44,13 +44,13 @@ export const supportedMarketplaceOptions = [
 ] as const;
 
 export const researchSettingsSchema = z.object({
-  compareAcrossMarketplaces: z.boolean(),
-  selectedMarketplaces: z.array(marketplaceSlugSchema).min(1),
-  includeReddit: z.boolean(),
-  includeYouTube: z.boolean(),
-  includeEditorial: z.boolean(),
-  dealPreference: dealPreferenceSchema,
-  showPriceDeltaPercent: z.boolean(),
+  compareAcrossMarketplaces: z.boolean().default(true),
+  selectedMarketplaces: z.array(marketplaceSlugSchema).min(1).default(supportedMarketplaceOptions.map((option) => option.slug)),
+  includeReddit: z.boolean().default(true),
+  includeYouTube: z.boolean().default(true),
+  includeEditorial: z.boolean().default(true),
+  dealPreference: dealPreferenceSchema.default("balanced"),
+  showPriceDeltaPercent: z.boolean().default(true),
 });
 
 export const sourceEvidenceSchema = z.object({

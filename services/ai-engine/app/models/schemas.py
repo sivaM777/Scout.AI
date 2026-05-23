@@ -120,13 +120,33 @@ class AlternativeProduct(BaseModel):
 
 
 class ResearchPreferences(BaseModel):
-    compare_across_marketplaces: bool = Field(alias="compareAcrossMarketplaces")
-    selected_marketplaces: list[MarketplaceSlug] = Field(alias="selectedMarketplaces")
-    include_reddit: bool = Field(alias="includeReddit")
-    include_youtube: bool = Field(alias="includeYouTube")
-    include_editorial: bool = Field(alias="includeEditorial")
-    deal_preference: DealPreference = Field(alias="dealPreference")
-    show_price_delta_percent: bool = Field(alias="showPriceDeltaPercent")
+    compare_across_marketplaces: bool = Field(default=True, alias="compareAcrossMarketplaces")
+    selected_marketplaces: list[MarketplaceSlug] = Field(
+        default_factory=lambda: [
+            "amazon",
+            "flipkart",
+            "ajio",
+            "myntra",
+            "nykaa",
+            "tatacliq",
+            "meesho",
+            "croma",
+            "reliance-digital",
+            "vijay-sales",
+            "snapdeal",
+            "jiomart",
+            "firstcry",
+            "hm",
+            "zara",
+            "best-buy",
+        ],
+        alias="selectedMarketplaces",
+    )
+    include_reddit: bool = Field(default=True, alias="includeReddit")
+    include_youtube: bool = Field(default=True, alias="includeYouTube")
+    include_editorial: bool = Field(default=True, alias="includeEditorial")
+    deal_preference: DealPreference = Field(default="balanced", alias="dealPreference")
+    show_price_delta_percent: bool = Field(default=True, alias="showPriceDeltaPercent")
 
     model_config = {
         "populate_by_name": True,

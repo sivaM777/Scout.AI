@@ -14,7 +14,16 @@ type AnalysisRouteDeps = {
 
 export async function registerAnalysisRoutes(app: FastifyInstance, deps: AnalysisRouteDeps): Promise<void> {
   app.post("/v1/analysis", async (request, reply) => {
-    const payload = analyzeLinkRequestSchema.parse(request.body);
+    const parsedPayload = analyzeLinkRequestSchema.safeParse(request.body);
+
+    if (!parsedPayload.success) {
+      return reply.code(400).send({
+        message: "Invalid analysis request.",
+        issues: parsedPayload.error.flatten(),
+      });
+    }
+
+    const payload = parsedPayload.data;
     const cacheKey = buildAnalysisCacheKey(payload);
     const cachedReport = await deps.cacheStore.get<AnalysisReport>(cacheKey);
 

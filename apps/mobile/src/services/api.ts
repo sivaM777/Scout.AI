@@ -1,14 +1,31 @@
-import { analysisReportSchema, watchlistItemSchema, type AnalysisReport, type AnalyzeLinkRequest, type WatchlistItem } from "@scout/shared";
+import {
+  analysisReportSchema,
+  defaultResearchSettings,
+  watchlistItemSchema,
+  type AnalysisReport,
+  type AnalyzeLinkRequest,
+  type WatchlistItem,
+} from "@scout/shared";
 import { mockWatchlist } from "../data/mock-analysis";
 import { API_BASE_URL } from "../config/runtime";
 
 export async function analyzeProductLink(payload: AnalyzeLinkRequest): Promise<AnalysisReport> {
+  const requestPayload: AnalyzeLinkRequest = payload.preferences
+    ? {
+        ...payload,
+        preferences: {
+          ...defaultResearchSettings,
+          ...payload.preferences,
+        },
+      }
+    : payload;
+
   const response = await fetch(`${API_BASE_URL}/v1/analysis`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(requestPayload),
   });
 
   if (!response.ok) {
